@@ -53,17 +53,16 @@ public class MetricsExample : MonoBehaviour
             return;
 
         // This is an example of sending Helios specific events
-        MetricsClient.SendSession(new Helios.Keen.Client.Session
+        MetricsClient.SendQuizEvent(new Helios.Keen.Client.QuizEvent
         {
-            abandoned       = true,
-            duration        = 250.0f,
+            quizId = "IQ test",
+            quizResult = "failed",
             experienceData  = new Helios.Keen.Client.ExperienceData
             {
-                experienceLabel = "Keen.Reboot",
+                experienceLabel = "Keen Plugin",
                 versionNumber   = "1.0.0",
                 location        = "never land"
-            },
-            registerStatus  = "done"
+            }
         });
 
         // This is an example of using custom data types

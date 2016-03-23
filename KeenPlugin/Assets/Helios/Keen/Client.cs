@@ -183,7 +183,7 @@
         /// <summary>
         /// Sends JSON string to Keen IO
         /// </summary>
-        public void SendEvent(string event_name, string event_data)
+        public virtual void SendEvent(string event_name, string event_data)
         {
             if (!m_Validated)
                 Debug.LogError("[Keen] Client is not validated.");
