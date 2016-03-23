@@ -95,7 +95,9 @@
             if (SessionStarted)
                 EndSession(EndSessionType.Erroneous);
 
-            session.guestId = System.Guid.NewGuid().ToString();
+            if (string.IsNullOrEmpty(session.guestId))
+                session.guestId = System.Guid.NewGuid().ToString();
+
             m_StartTime = Time.time;
             m_Session = session;
 
