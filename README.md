@@ -19,7 +19,7 @@ You may begin by importing the latest stable release `.unitypackage`. There is a
 Start by having an instance of `Helios.Keen.Client` which is a `MonoBehaviour`:
 
 ```C#
-var MetricsClient = GetComponent<Helios.Keen.Client>();
+var MetricsClient = gameObject.AddComponent<Helios.Keen.Client>();
 ```
 
 Then provide it your project's specific settings:
@@ -45,21 +45,40 @@ MetricsClient.Settings = new Helios.Keen.Client.Config
 And start sending events:
 
 ```C#
-MetricsClient.SendSession(new Helios.Keen.Client.Session
+// This is an example of sending Helios specific events
+MetricsClient.SendQuizEvent(new Helios.Keen.Client.QuizEvent
 {
-	abandoned       = true,
-	duration        = 250.0f,
+	quizId = "IQ test",
+	quizResult = "failed",
 	experienceData  = new Helios.Keen.Client.ExperienceData
 	{
-		experienceLabel = "Keen.Reboot",
+		experienceLabel = "Keen Plugin",
 		versionNumber   = "1.0.0",
 		location        = "never land"
-	},
-	registerStatus  = "done"
+	}
+});
+
+// This is an example of using custom data types
+MetricsClient.SendEvent("custom_event", new CustomData
+{
+	data_member_1 = "test string",
+	data_member_2 = 25000.0f,
+	data_member_3 = new CustomNestedData
+	{
+		data_member_1 = "\"nested\" string",
+		data_member_2 = 25000d,
+	}
 });
 ```
 
+Don't forget to cleanup after yourself! (In case you used `AddComponent`)
+
+```C#
+Destroy(MetricsClient);
+```
+
 Take a look at `MetricsExample.cs` for more in-depth usage examples.
+Also `SessionExample.cs` shows you how to use `StateAwareClient` class.
 
 ## Built-in JSON serializer notes
 

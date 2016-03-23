@@ -1,16 +1,16 @@
 ﻿using System.IO;
 using UnityEngine;
 
-[RequireComponent(typeof(Helios.Keen.Client))]
-public class MetricsExample : MonoBehaviour
+[RequireComponent(typeof(Helios.Keen.SessionAwareClient))]
+public class SessionExample : MonoBehaviour
 {
-    Helios.Keen.Client MetricsClient;
+    Helios.Keen.SessionAwareClient MetricsClient;
 
     void Awake()
     {
         // Add a metrics client as a member
         if (MetricsClient == null)
-            MetricsClient = gameObject.AddComponent<Helios.Keen.Client>();
+            MetricsClient = gameObject.AddComponent<Helios.Keen.SessionAwareClient>();
     }
 
     void OnDestroy()
@@ -55,11 +55,14 @@ public class MetricsExample : MonoBehaviour
         if (!Input.GetMouseButtonDown(0))
             return;
 
+        // Start a new session with a random UUID
+        MetricsClient.StartSession();
+
         // This is an example of sending Helios specific events
         MetricsClient.SendQuizEvent(new Helios.Keen.Client.QuizEvent
         {
-            quizId = "IQ test",
-            quizResult = "failed",
+            quizId      = "IQ test",
+            quizResult  = "failed",
             experienceData  = new Helios.Keen.Client.ExperienceData
             {
                 experienceLabel = "Keen Plugin",
@@ -67,6 +70,12 @@ public class MetricsExample : MonoBehaviour
                 location        = "never land"
             }
         });
+
+        // End current session
+        MetricsClient.EndSession(Helios.Keen.Client.EndSessionType.Completed);
+
+        // Start a new session with a known guestId
+        MetricsClient.StartSession(new Helios.Keen.Client.Session { guestId = "myGuestId" });
 
         // This is an example of using custom data types
         MetricsClient.SendEvent("custom_event", new CustomData
@@ -79,6 +88,9 @@ public class MetricsExample : MonoBehaviour
                 data_member_2 = 25000d,
             }
         });
+
+        // End current session
+        MetricsClient.EndSession(Helios.Keen.Client.EndSessionType.Abandoned);
     }
 
     class CustomData
