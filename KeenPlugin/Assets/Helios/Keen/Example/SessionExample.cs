@@ -1,20 +1,23 @@
 ﻿using System.IO;
 using UnityEngine;
 
-[RequireComponent(typeof(Helios.Keen.Client))]
+[RequireComponent(typeof(Helios.Keen.SessionAwareClient))]
 public class SessionExample : MonoBehaviour
 {
-    public Helios.Keen.SessionAwareClient MetricsClient;
+    Helios.Keen.SessionAwareClient MetricsClient;
 
     void Awake()
     {
-        // Always make sure you have a Client instance attached.
-
+        // Add a metrics client as a member
         if (MetricsClient == null)
-            MetricsClient = GetComponent<Helios.Keen.SessionAwareClient>();
+            MetricsClient = gameObject.AddComponent<Helios.Keen.SessionAwareClient>();
+    }
 
-        if (MetricsClient == null)
-            Debug.LogError("Did you forget to set the reference to Helios.KeenClient?");
+    void OnDestroy()
+    {
+        // Remember to clean up after yourself!
+        if (MetricsClient != null)
+            Destroy(MetricsClient);
     }
 
     void Start()
@@ -27,7 +30,7 @@ public class SessionExample : MonoBehaviour
             /* [REQUIRED] Keen.IO project id, Get this from Keen dashboard */
             ProjectId           = "none",
             /* [REQUIRED] Keen.IO write key, Get this from Keen dashboard */
-            WriteKey = "none",
+            WriteKey            = "none",
             /* [OPTIONAL] Attempt to sweep the cache every 45 seconds */
             CacheSweepInterval  = 45.0f,
             /* [OPTIONAL] In every sweep attempt pop 10 cache entries */
@@ -58,8 +61,8 @@ public class SessionExample : MonoBehaviour
         // This is an example of sending Helios specific events
         MetricsClient.SendQuizEvent(new Helios.Keen.Client.QuizEvent
         {
-            quizId = "IQ test",
-            quizResult = "failed",
+            quizId      = "IQ test",
+            quizResult  = "failed",
             experienceData  = new Helios.Keen.Client.ExperienceData
             {
                 experienceLabel = "Keen Plugin",

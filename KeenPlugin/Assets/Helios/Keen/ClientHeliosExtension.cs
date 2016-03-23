@@ -99,7 +99,7 @@
             m_StartTime = Time.time;
             m_Session = session;
 
-            base.SendEvent("SessionStart", m_Session);
+            base.SendEvent("SessionStart", Serialize(m_Session));
         }
 
         /// <summary>
@@ -118,7 +118,7 @@
 
             m_Session.abandoned = type;
 
-            base.SendEvent("SessionEnd", m_Session);
+            base.SendEvent("SessionEnd", Serialize(m_Session));
 
             m_Session = default(Session);
             m_StartTime = 0.0f;
@@ -177,7 +177,7 @@
                 return;
             }
 
-            data = string.Format("{0}, \"guestId\":\"{1}\"}}", data.TrimEnd('}'), m_Session.guestId);
+            data = string.Format("{0}, \"guestId\":\"{1}\"}}", data.Remove(data.Length - 1, 1), m_Session.guestId);
         }
     }
 }

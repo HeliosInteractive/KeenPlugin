@@ -4,17 +4,20 @@ using UnityEngine;
 [RequireComponent(typeof(Helios.Keen.Client))]
 public class MetricsExample : MonoBehaviour
 {
-    public Helios.Keen.Client MetricsClient;
+    Helios.Keen.Client MetricsClient;
 
     void Awake()
     {
-        // Always make sure you have a Client instance attached.
-
+        // Add a metrics client as a member
         if (MetricsClient == null)
-            MetricsClient = GetComponent<Helios.Keen.Client>();
+            MetricsClient = gameObject.AddComponent<Helios.Keen.Client>();
+    }
 
-        if (MetricsClient == null)
-            Debug.LogError("Did you forget to set the reference to Helios.KeenClient?");
+    void OnDestroy()
+    {
+        // Remember to clean up after yourself!
+        if (MetricsClient != null)
+            Destroy(MetricsClient);
     }
 
     void Start()
@@ -27,7 +30,7 @@ public class MetricsExample : MonoBehaviour
             /* [REQUIRED] Keen.IO project id, Get this from Keen dashboard */
             ProjectId           = "none",
             /* [REQUIRED] Keen.IO write key, Get this from Keen dashboard */
-            WriteKey = "none",
+            WriteKey            = "none",
             /* [OPTIONAL] Attempt to sweep the cache every 45 seconds */
             CacheSweepInterval  = 45.0f,
             /* [OPTIONAL] In every sweep attempt pop 10 cache entries */

@@ -14,9 +14,9 @@
     /// </summary>
     public class Sqlite : Client.ICacheProvider
     {
-        private IDbConnection m_DatabaseConn;
-        private IDbCommand m_QueryCommand;
-        private bool m_Ready = false;
+        private IDbConnection   m_DatabaseConn;
+        private IDbCommand      m_QueryCommand;
+        private bool            m_Ready = false;
 
         public Sqlite(string db)
         {
