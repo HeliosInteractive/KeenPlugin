@@ -145,8 +145,8 @@
                 {
                     // This invokes our Generic method with
                     // a dynamic type info during runtime.
-                    val = typeof(Client)
-                        .GetMethod("Serialize")
+                    val = GetType()
+                        .GetMethod(MethodInfo.GetCurrentMethod().Name)
                         .MakeGenericMethod(info.FieldType)
                         .Invoke(this, new object[] { info.GetValue(obj) })
                         .ToString();
