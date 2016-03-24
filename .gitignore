@@ -20,5 +20,8 @@
 /KeenPlugin/ProjectSettings/ProjectVersion.txt
 /KeenPlugin/Assets/*
 !/KeenPlugin/Assets/Helios
+!/KeenPlugin/Assets/StreamingAssets
+!/KeenPlugin/Assets/StreamingAssets.meta
 /KeenPlugin/Assets/StreamingAssets/*
+!/KeenPlugin/Assets/StreamingAssets/empty
 !/KeenPlugin/Assets/StreamingAssets/empty
