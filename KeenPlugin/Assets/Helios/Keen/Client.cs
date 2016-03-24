@@ -75,9 +75,13 @@
         }
 
         private bool                        m_Validated = false;
+        private bool                        m_Caching   = false;
         private Config                      m_Settings  = null;
         private List<ICacheProvider.Entry>  m_Cached    = new List<ICacheProvider.Entry>();
 
+        /// <summary>
+        /// Instance settings. Use this to provide your Keen project settings.
+        /// </summary>
         public Config Settings
         {
             get { return m_Settings; }
@@ -85,6 +89,7 @@
             {
                 StopAllCoroutines();
                 m_Validated = false;
+                m_Caching = false;
                 m_Settings = value;
 
                 if (Settings == null)
@@ -96,11 +101,32 @@
                 else if (Settings.CacheSweepInterval <= 0.5f)
                     Debug.LogError("[Keen] cache sweep interval is invalid.");
                 else m_Validated = true;
-
-                if (Settings.CacheInstance != null &&
-                    Settings.CacheInstance.Ready())
-                    StartCoroutine(CacheRoutineCo());
             }
+        }
+
+        /// <summary>
+        /// Start caching routine. You rarely need to call this. SendEvent
+        /// calls this when the first time you call SendEvent.
+        /// </summary>
+        public void StartCaching()
+        {
+            if (!m_Validated)
+            {
+                Debug.LogWarning("[Keen] instance is not validated.");
+                return;
+            }
+
+            if (m_Caching)
+            {
+                Debug.LogWarning("[Keen] instance is already caching.");
+                return;
+            }
+
+            if (Settings.CacheInstance != null &&
+                Settings.CacheInstance.Ready())
+                StartCoroutine(CacheRoutineCo());
+
+            m_Caching = true;
         }
 
         /// <summary>
@@ -193,6 +219,9 @@
                 Debug.LogError("[Keen] event data is empty.");
             else // run if all above tests passed
                 StartCoroutine(SendEventCo(event_name, event_data, Settings.EventCallback));
+
+            if (!m_Caching)
+                StartCaching();
         }
 
         /// <summary>
