@@ -107,6 +107,8 @@ class `Helios.Keen.Client` is the actual client library. class `Helios.Keen.Cach
 
 For optimal performance I highly recommend multiple instances of `Helios.Keen.Client` in conjunction with `Helios.Keen.Cache.Sqlite` instances. Each instance of `Helios.Keen.Cache.Sqlite` must point to a separate database for optimal performance otherwise it causes race conditions/lock issues between multiple instances pointing to the same database.
 
+You may also consider installing [Visual C++ Redistributable for Visual Studio 2015](https://www.microsoft.com/en-us/download/details.aspx?id=48145) if you are using binaries provided in this repository under Windows.
+
 ## Helios extensions
 
 Helios internally uses some conventions when dealing with Keen.IO. These conventions can be found in `Helios/Keen/ClientHeliosExtension.cs`.
