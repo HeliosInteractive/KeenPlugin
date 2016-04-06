@@ -61,9 +61,10 @@
             public float ControlledShutdownTimeout = 5.0f;
 
             /// <summary>
-            /// How long to suspend the main thread (in seconds) in OnDestroy 
-            /// to give any outstanding network calls time to complete. This 
-            /// only occcurs while running in the editor.
+            /// If ControlledShutdown is enabled, how long to suspend the main 
+            /// thread (in seconds) in OnDestroy to give any outstanding 
+            /// network calls time to complete. This only occcurs while running 
+            /// in the editor.
             /// </summary>
             public float InEditorSleepDuration = 5.0f;
         }
@@ -98,33 +99,48 @@
         private Config                      m_Settings  = null;
         private List<ICacheProvider.Entry>  m_Cached    = new List<ICacheProvider.Entry>();
 
-        class Request
+        private class Request : IDisposable
         {
-            public WWW RequestData;
-            public string EventName;
-            public string EventData;
-            public Action<CallbackData> Callback;
-            public EventStatus Status;
+            private WWW m_RequestData;
+            private string m_EventName;
+            private string m_EventData;
+            private Action<CallbackData> m_Callback;
+            private EventStatus m_Status;
+
+            public WWW RequestData { get { return m_RequestData; } }
+            public string EventName { get { return m_EventName; } }
+            public string EventData { get { return m_EventData; } }
+            public Action<CallbackData> Callback { get { return m_Callback; } }
+            public EventStatus Status { get { return m_Status; } }
+
+            public Request(WWW requestData, string eventName, string eventData, Action<CallbackData> callback, EventStatus status)
+            {
+                m_RequestData = requestData;
+                m_EventName = eventName;
+                m_EventData = eventData;
+                m_Callback = callback;
+                m_Status = status;
+            }
 
             public bool IsDone
             {
                 get
                 {
-                    return RequestData != null && RequestData.isDone;
+                    return m_RequestData != null && m_RequestData.isDone;
                 }
             }
 
             public void Dispose()
             {
-                if (RequestData != null)
-                    RequestData.Dispose();
+                if (m_RequestData != null)
+                    m_RequestData.Dispose();
             }
         }
 
         /// <summary>
         /// A list of outstanding requests. An in-memory queue of requests.
         /// </summary>
-        private List<Request> _requestQueue = new List<Request>();
+        private List<Request> m_RequestQueue = new List<Request>();
 
         /// <summary>
         /// Whether the application is currently qutting.
@@ -136,7 +152,7 @@
         /// </summary>
         private bool m_AllowQuitting = true;
 
-        private event Action _shutdown;
+        private event Action m_Shutdown;
 
         /// <summary>
         /// An event that gets fired when the application is quitting that enables last-minute 
@@ -144,8 +160,8 @@
         /// </summary>
         public event Action Shutdown
         {
-            add { _shutdown += value; }
-            remove { _shutdown -= value; }
+            add { m_Shutdown += value; }
+            remove { m_Shutdown -= value; }
         }
 
         /// <summary>
@@ -312,7 +328,7 @@
                 , Settings.ProjectId, event_name),
                 System.Text.Encoding.ASCII.GetBytes(event_data), headers);
 
-            Request request = new Request { RequestData = keen_server, EventName = event_name, EventData = event_data, Callback = callback, Status = status };
+            Request request = new Request(keen_server, event_name, event_data, callback, status);
 
             QueueRequest(request);
 
@@ -326,23 +342,37 @@
             }
         }
 
+        /// <summary>
+        /// Add a request to the request queue.
+        /// </summary>
+        /// <param name="request">A Request object</param>
         private void QueueRequest(Request request)
         {
-            _requestQueue.Add(request);
-        }
-
-        private void DequeRequest(Request request)
-        {
-            _requestQueue.Remove(request);
+            m_RequestQueue.Add(request);
         }
 
         /// <summary>
-        /// Checks if the queued request succeeded.
+        /// Remove a request from the request queue.
         /// </summary>
-        /// <param name="request">The queued request</param>
+        /// <param name="request">A Request object</param>
+        private void DequeRequest(Request request)
+        {
+            m_RequestQueue.Remove(request);
+        }
+
+        /// <summary>
+        /// Checks if a completed (isDone == true) request succeeded.
+        /// </summary>
+        /// <param name="request">A Request object</param>
         /// <returns>True on a successful request; otherwise, false.</returns>
         private bool CheckRequest(Request request)
         {
+            if (request == null)
+                throw new NullReferenceException("[Keen] Request is null.");
+
+            if (!request.IsDone)
+                throw new InvalidOperationException("[Keen] Request is not complete.");
+
             if (!String.IsNullOrEmpty(request.RequestData.error))
             {
                 Debug.LogErrorFormat("[Keen]: {0}", request.RequestData.error);
@@ -360,7 +390,7 @@
         /// <summary>
         /// Checks if the queued request failed and if so, caches it.
         /// </summary>
-        /// <param name="request">A valid queued request</param>
+        /// <param name="request">A Request object</param>
         private void CacheRequest(Request request)
         {
             if (!String.IsNullOrEmpty(request.RequestData.error))
@@ -397,7 +427,7 @@
         /// </summary>
         private void DisposeQueuedRequests()
         {
-            foreach (Request queuedRequest in _requestQueue)
+            foreach (Request queuedRequest in m_RequestQueue)
             {
                 if (!queuedRequest.IsDone)
                 {
@@ -446,11 +476,11 @@
         /// </summary>
         void OnDestroy()
         {
-            if (Application.isEditor)
+            if (Application.isEditor && Settings.ControlledShutdown)
             {
                 OnShutdown();
 
-                if (_requestQueue.Count > 0)
+                if (m_RequestQueue.Count > 0)
                 {
                     Debug.LogWarning(@"[Keen] There were outstanding queued requests on shutdown. This 
                                 may be caused by an unresponsive or non-existant connection to the 
@@ -461,7 +491,7 @@
                         Debug.LogWarning(@"[Keen] Editor may hang briefly while outstanding queued 
                                         requests are given a chance to complete.");
 
-                        // Allow network calls (initiated via WWW class) to finish up 
+                        // Allow network calls (initiated via WWW class) a chance to finish up before we continue
                         System.Threading.Thread.Sleep((int)Settings.InEditorSleepDuration * 1000);
                     }
 
@@ -530,7 +560,7 @@
 
         private void QuitOnEmptyRequestQueue()
         {
-            if (_requestQueue.Count == 0)
+            if (m_RequestQueue.Count == 0)
             {
                 Debug.LogFormat("No queued requests. Quitting...");
                 // No more need for a quit timeout. We are quitting.
@@ -548,8 +578,8 @@
         /// </summary>
         protected virtual void OnShutdown()
         {
-            if (_shutdown != null)
-                _shutdown();
+            if (m_Shutdown != null)
+                m_Shutdown();
         }
 
         /// <summary>
