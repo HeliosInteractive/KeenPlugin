@@ -47,6 +47,25 @@
             /// Optional cache provider
             /// </summary>
             public ICacheProvider CacheInstance;
+
+            /// <summary>
+            /// Whether or not to prevent Application.Quit and fire off
+            /// the OnShutdown method & event. This only works in builds.
+            /// </summary>
+            public bool ControlledShutdown = true;
+
+            /// <summary>
+            /// If ControlledShutdown is enabled, the application will
+            /// automatically quit after this period of time has elapsed.
+            /// </summary>
+            public float ControlledShutdownTimeout = 5.0f;
+
+            /// <summary>
+            /// How long to suspend the main thread (in seconds) in OnDestroy 
+            /// to give any outstanding network calls time to complete. This 
+            /// only occcurs while running in the editor.
+            /// </summary>
+            public float InEditorSleepDuration = 5.0f;
         }
 
         /// <summary>
@@ -79,6 +98,56 @@
         private Config                      m_Settings  = null;
         private List<ICacheProvider.Entry>  m_Cached    = new List<ICacheProvider.Entry>();
 
+        class Request
+        {
+            public WWW RequestData;
+            public string EventName;
+            public string EventData;
+            public Action<CallbackData> Callback;
+            public EventStatus Status;
+
+            public bool IsDone
+            {
+                get
+                {
+                    return RequestData != null && RequestData.isDone;
+                }
+            }
+
+            public void Dispose()
+            {
+                if (RequestData != null)
+                    RequestData.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// A list of outstanding requests. An in-memory queue of requests.
+        /// </summary>
+        private List<Request> _requestQueue = new List<Request>();
+
+        /// <summary>
+        /// Whether the application is currently qutting.
+        /// </summary>
+        private bool m_Quitting = false;
+
+        /// <summary>
+        /// Whether to allow the application to quit (if Settings.ControlledShutdown is enabled).
+        /// </summary>
+        private bool m_AllowQuitting = true;
+
+        private event Action _shutdown;
+
+        /// <summary>
+        /// An event that gets fired when the application is quitting that enables last-minute 
+        /// events to be sent cleanly. Only fired if Settings.ControlledShutdown is enabled.
+        /// </summary>
+        public event Action Shutdown
+        {
+            add { _shutdown += value; }
+            remove { _shutdown -= value; }
+        }
+
         /// <summary>
         /// Instance settings. Use this to provide your Keen project settings.
         /// </summary>
@@ -101,6 +170,9 @@
                 else if (Settings.CacheSweepInterval <= 0.5f)
                     Debug.LogError("[Keen] cache sweep interval is invalid.");
                 else m_Validated = true;
+
+                // If we are in ControlledShutdown mode, don't allow quitting.
+                m_AllowQuitting = !value.ControlledShutdown;
             }
         }
 
@@ -240,31 +312,97 @@
                 , Settings.ProjectId, event_name),
                 System.Text.Encoding.ASCII.GetBytes(event_data), headers);
 
+            Request request = new Request { RequestData = keen_server, EventName = event_name, EventData = event_data, Callback = callback, Status = status };
+
+            QueueRequest(request);
+
             yield return keen_server;
 
-            if (!String.IsNullOrEmpty(keen_server.error))
-            {
-                Debug.LogErrorFormat("[Keen]: {0}", keen_server.error);
+            DequeRequest(request);
 
-                if (status == EventStatus.None &&
+            if (!CheckRequest(request))
+            {
+                CacheRequest(request);
+            }
+        }
+
+        private void QueueRequest(Request request)
+        {
+            _requestQueue.Add(request);
+        }
+
+        private void DequeRequest(Request request)
+        {
+            _requestQueue.Remove(request);
+        }
+
+        /// <summary>
+        /// Checks if the queued request succeeded.
+        /// </summary>
+        /// <param name="request">The queued request</param>
+        /// <returns>True on a successful request; otherwise, false.</returns>
+        private bool CheckRequest(Request request)
+        {
+            if (!String.IsNullOrEmpty(request.RequestData.error))
+            {
+                Debug.LogErrorFormat("[Keen]: {0}", request.RequestData.error);
+                return false;
+            }
+
+            Debug.LogFormat("[Keen] sent successfully: {0}", request.EventName);
+                if (request.Callback != null)
+                    request.Callback.Invoke(new CallbackData
+                    { status = EventStatus.Submitted, data = request.EventData, name = request.EventName });
+
+            return true;
+        }
+
+        /// <summary>
+        /// Checks if the queued request failed and if so, caches it.
+        /// </summary>
+        /// <param name="request">A valid queued request</param>
+        private void CacheRequest(Request request)
+        {
+            if (!String.IsNullOrEmpty(request.RequestData.error))
+            {
+                Debug.LogErrorFormat("[Keen]: {0}", request.RequestData.error);
+
+                if (request.Status == EventStatus.None &&
                     Settings.CacheInstance != null &&
                     Settings.CacheInstance.Ready() &&
-                    Settings.CacheInstance.Write(new ICacheProvider.Entry { name = event_name, data = event_data }))
+                    Settings.CacheInstance.Write(new ICacheProvider.Entry { name = request.EventName, data = request.EventData }))
                 {
-                    if (callback != null)
-                        callback.Invoke(new CallbackData
-                        { status = EventStatus.Cached, data = event_data, name = event_name });
+                    if (request.Callback != null)
+                        request.Callback.Invoke(new CallbackData
+                        { status = EventStatus.Cached, data = request.EventData, name = request.EventName });
                 }
-                else if (callback != null)
-                    callback.Invoke(new CallbackData
-                    { status = EventStatus.Failed, data = event_data, name = event_name });
+                else if (request.Callback != null)
+                    request.Callback.Invoke(new CallbackData
+                    { status = EventStatus.Failed, data = request.EventData, name = request.EventName });
             }
             else
             {
-                Debug.LogFormat("[Keen] sent successfully: {0}", event_name);
-                if (callback != null)
-                    callback.Invoke(new CallbackData
-                    { status = EventStatus.Submitted, data = event_data, name = event_name });
+                Debug.LogFormat("[Keen] sent successfully: {0}", request.EventName);
+                if (request.Callback != null)
+                    request.Callback.Invoke(new CallbackData
+                    { status = EventStatus.Submitted, data = request.EventData, name = request.EventName });
+            }
+        }
+
+        /// <summary>
+        /// Synchronously iterates over and disposes all queued requests.
+        /// This results in a call to WWW.Dispose any any requests where
+        /// the underlaying WWW object is not done, which will return from
+        /// any yield statements waiting on the WWW request.
+        /// </summary>
+        private void DisposeQueuedRequests()
+        {
+            foreach (Request queuedRequest in _requestQueue)
+            {
+                if (!queuedRequest.IsDone)
+                {
+                    queuedRequest.Dispose();
+                }
             }
         }
 
@@ -308,10 +446,110 @@
         /// </summary>
         void OnDestroy()
         {
-            StopAllCoroutines();
+            if (Application.isEditor)
+            {
+                OnShutdown();
+
+                if (_requestQueue.Count > 0)
+                {
+                    Debug.LogWarning(@"[Keen] There were outstanding queued requests on shutdown. This 
+                                may be caused by an unresponsive or non-existant connection to the 
+                                remote server.");
+
+                    if (Settings.InEditorSleepDuration > 0)
+                    {
+                        Debug.LogWarning(@"[Keen] Editor may hang briefly while outstanding queued 
+                                        requests are given a chance to complete.");
+
+                        // Allow network calls (initiated via WWW class) to finish up 
+                        System.Threading.Thread.Sleep((int)Settings.InEditorSleepDuration * 1000);
+                    }
+
+                    DisposeQueuedRequests();
+                }
+            }
+
+            //StopAllCoroutines();
 
             if (Settings != null && Settings.CacheInstance != null)
                 Settings.CacheInstance.Dispose();
+        }
+
+        void OnApplicationQuit()
+        {
+            // Debug
+            //Debug.Log("OnApplicationQuit");
+
+            if (!m_AllowQuitting)
+            {
+                if (!Application.isEditor)
+                    Debug.LogWarning("[Keen] Canceling application quit to perform shutdown logic.");
+
+                Application.CancelQuit();
+            }
+
+            if (m_Quitting)
+                return;
+
+            m_Quitting = true;
+
+            if (Settings.ControlledShutdown)
+            {
+                if (!Application.isEditor)
+                {
+                    OnShutdown();
+
+                    InvokeRepeating("QuitOnEmptyRequestQueue", 0.0f, 0.5f);
+
+                    // Creates a timeout for quitting the application cleanly incase the requests in the queue
+                    // don't complete fast enough.
+                    StartCoroutine(QuitOnTimeout());
+                }
+            }
+        }
+
+        private IEnumerator QuitOnTimeout()
+        {
+            Debug.LogFormat("[Keen] Quit timeout started at {0}.", System.DateTime.Now.ToShortTimeString());
+
+            yield return new WaitForSeconds(Settings.ControlledShutdownTimeout);
+
+            // Quit timeout has elapsed. Cancel the QuitOnEmptyRequestQueue repeating invocation.
+            if (IsInvoking("QuitOnEmptyRequestQueue"))
+                CancelInvoke("QuitOnEmptyRequestQueue");
+
+            Debug.LogFormat("[Keen] Quit timeout elapsed at {0}.", System.DateTime.Now.ToShortTimeString());
+
+            DisposeQueuedRequests();
+
+            Debug.LogFormat("Quitting at {0}.", System.DateTime.Now.ToShortTimeString());
+
+            m_AllowQuitting = true;
+            Application.Quit();
+        }
+
+        private void QuitOnEmptyRequestQueue()
+        {
+            if (_requestQueue.Count == 0)
+            {
+                Debug.LogFormat("No queued requests. Quitting...");
+                // No more need for a quit timeout. We are quitting.
+                StopCoroutine(QuitOnTimeout());
+                m_AllowQuitting = true;
+                Application.Quit();
+            }
+        }
+
+        /// <summary>
+        /// A hook that gets called when the application is quitting that enables last-minute 
+        /// events to be sent cleanly. Only works if Settings.ControlledShutdown is enabled. 
+        /// Can be overridden in derived classes. Must call base.OnShutdown or Shutdown event 
+        /// will not be fired.
+        /// </summary>
+        protected virtual void OnShutdown()
+        {
+            if (_shutdown != null)
+                _shutdown();
         }
 
         /// <summary>
