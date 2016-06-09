@@ -143,7 +143,7 @@
         private List<Request> m_RequestQueue = new List<Request>();
 
         /// <summary>
-        /// Whether the application is currently qutting.
+        /// Whether the application is currently quitting.
         /// </summary>
         private bool m_Quitting = false;
 
@@ -151,18 +151,6 @@
         /// Whether to allow the application to quit (if Settings.ControlledShutdown is enabled).
         /// </summary>
         private bool m_AllowQuitting = true;
-
-        private event Action m_Shutdown;
-
-        /// <summary>
-        /// An event that gets fired when the application is quitting that enables last-minute 
-        /// events to be sent cleanly. Only fired if Settings.ControlledShutdown is enabled.
-        /// </summary>
-        public event Action Shutdown
-        {
-            add { m_Shutdown += value; }
-            remove { m_Shutdown -= value; }
-        }
 
         /// <summary>
         /// Instance settings. Use this to provide your Keen project settings.
@@ -478,12 +466,10 @@
         {
             if (Application.isEditor && Settings.ControlledShutdown)
             {
-                OnShutdown();
-
                 if (m_RequestQueue.Count > 0)
                 {
                     Debug.LogWarning(@"[Keen] There were outstanding queued requests on shutdown. This 
-                                may be caused by an unresponsive or non-existant connection to the 
+                                may be caused by an unresponsive or non-existent connection to the 
                                 remote server.");
 
                     if (Settings.InEditorSleepDuration > 0)
@@ -527,11 +513,9 @@
             {
                 if (!Application.isEditor)
                 {
-                    OnShutdown();
-
                     InvokeRepeating("QuitOnEmptyRequestQueue", 0.0f, 0.5f);
 
-                    // Creates a timeout for quitting the application cleanly incase the requests in the queue
+                    // Creates a timeout for quitting the application cleanly in case the requests in the queue
                     // don't complete fast enough.
                     StartCoroutine(QuitOnTimeout());
                 }
@@ -568,18 +552,6 @@
                 m_AllowQuitting = true;
                 Application.Quit();
             }
-        }
-
-        /// <summary>
-        /// A hook that gets called when the application is quitting that enables last-minute 
-        /// events to be sent cleanly. Only works if Settings.ControlledShutdown is enabled. 
-        /// Can be overridden in derived classes. Must call base.OnShutdown or Shutdown event 
-        /// will not be fired.
-        /// </summary>
-        protected virtual void OnShutdown()
-        {
-            if (m_Shutdown != null)
-                m_Shutdown();
         }
 
         /// <summary>
