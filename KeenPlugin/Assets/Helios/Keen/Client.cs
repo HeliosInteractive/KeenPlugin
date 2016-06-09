@@ -446,7 +446,7 @@
                 !Settings.CacheInstance.Ready())
                 yield break;
 
-            if (Settings.CacheInstance.Read(ref m_Cached, Settings.CacheSweepCount))
+            if (Settings.CacheInstance.Read(ref m_Cached, Settings.CacheSweepCount) && m_Cached.Count > 0)
             {
                 foreach (ICacheProvider.Entry entry in m_Cached)
                 {
@@ -455,12 +455,12 @@
                         if (result.status == EventStatus.Submitted)
                         {
                             Debug.Log("[Keen] Cached event sent successfully and will be removed.");
-                            Settings.CacheInstance.Remove(entry.id);
+                            Settings.CacheInstance.Remove(entry);
                         }
                         else
                         {
-                            Debug.LogWarningFormat("[Keen] Cached event with id {0} failed to be sent.",
-                                entry.id);
+                            Debug.LogWarningFormat("[Keen] Cached event failed to be sent.");
+                            Settings.CacheInstance.Write(entry);
                         }
                     },
                     EventStatus.Cached);
@@ -594,9 +594,46 @@
             /// </summary>
             public class Entry
             {
-                public int id;
                 public string name;
                 public string data;
+
+                private const string GLUE = "@@@";
+                private const uint CHRLIM = 4096;
+
+                /// <summary>
+                /// Serializes Entry to string. Uses a GLUE string (above)
+                /// NOTE: if you happen to have the GLUE string in your data
+                /// it will be removed!
+                /// NOTE: max (data+glue+name) length is CHRLIM (above)
+                /// </summary>
+                /// <returns>serialized Entry</returns>
+                public override string ToString()
+                {
+                    if (data.Contains(GLUE))
+                        Debug.LogWarningFormat("[Keen] your data contains the GLUE string: {0}!", GLUE);
+
+                    string result = string.Format("{0}{1}{2}", name, GLUE, data.Replace(GLUE, string.Empty));
+
+                    if (result.Length > CHRLIM)
+                        Debug.LogWarningFormat("[Keen] your data will be truncated! limit is: {0}", CHRLIM);
+
+                    return result;
+                }
+
+                /// <summary>
+                /// De serializes Entry from a string
+                /// </summary>
+                /// <param name="input">serialized Entry</param>
+                public void FromString(string input)
+                {
+                    name = string.Empty;
+                    data = string.Empty;
+
+                    var splitted = input.Split(new string[] { GLUE }, StringSplitOptions.RemoveEmptyEntries);
+
+                    if (splitted.Length > 0) name = splitted[0];
+                    if (splitted.Length > 1) data = splitted[1];
+                }
             }
 
             /// <summary>
@@ -607,13 +644,14 @@
 
             /// <summary>
             /// Writes an "Entry" to cache.
+            /// NOTE: MUST handle double-entries properly!
             /// </summary>
             public abstract bool Write(Entry entry);
 
             /// <summary>
             /// Removes an entry with ID "id" from cache storage.
             /// </summary>
-            public abstract bool Remove(int id);
+            public abstract bool Remove(Entry entry);
 
             /// <summary>
             /// Answers true if instance is ready to cache.
