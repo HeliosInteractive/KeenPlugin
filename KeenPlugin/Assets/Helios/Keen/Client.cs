@@ -223,7 +223,7 @@
         /// cache it here. ONLY .NET 1.0 does not have reflection cache
         /// NOTE: NO anonymous types!
         /// </summary>
-        protected string Serialize<T>(T obj)
+        public string Serialize<T>(T obj)
         {
             // Take in objects of type struct or class only.
             if (obj == null || !(typeof(T).IsValueType || typeof(T).IsClass))
@@ -377,7 +377,7 @@
 
             if (!m_Validated ||
                 Settings.CacheInstance == null ||
-                Settings.CacheInstance.Ready())
+                !Settings.CacheInstance.Ready())
             {
                 Debug.LogError("[Keen] cache routine is going to die forever. Bye Bye.");
                 yield break;
