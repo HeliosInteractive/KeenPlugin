@@ -95,6 +95,7 @@
             public WWW                      RequestData { get { return m_RequestData; } }
             public string                   EventName { get { return m_EventName; } }
             public string                   EventData { get { return m_EventData; } }
+            public bool                     Disposed { get { return m_Disposed; } }
             public Action<CallbackData>     Callback { get { return m_Callback; } }
             public EventStatus              Status { get { return m_Status; } }
 
@@ -110,14 +111,6 @@
                 m_EventData = event_data;
                 m_Callback = callback;
                 m_Status = status;
-            }
-
-            public bool IsDone
-            {
-                get
-                {
-                    return m_RequestData != null && m_RequestData.isDone;
-                }
             }
 
             #region IDisposable Support
@@ -326,11 +319,12 @@
         /// <returns>True on a successful request; otherwise, false.</returns>
         private bool CheckRequest(Request request)
         {
-            if (request == null)
-                throw new NullReferenceException("[Keen] Request is null.");
-
-            if (!request.IsDone)
-                throw new InvalidOperationException("[Keen] Request is not complete.");
+            if (request == null ||
+                request.RequestData == null ||
+                !request.RequestData.isDone)
+            {
+                throw new ArgumentException("[Keen] Request is dirty.");
+            }
 
             if (!string.IsNullOrEmpty(request.RequestData.error))
             {
@@ -420,9 +414,7 @@
 
                 foreach (Request pending_request in m_RequestQueue)
                 {
-                    if (!pending_request.IsDone)
-                        CacheRequest(pending_request);
-
+                    CacheRequest(pending_request);
                     pending_request.Dispose();
                 }
 
