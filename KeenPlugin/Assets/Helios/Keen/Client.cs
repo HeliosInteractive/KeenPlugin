@@ -376,6 +376,8 @@
         /// </summary>
         IEnumerator CacheRoutineCo()
         {
+            yield return new WaitForSeconds(Settings.CacheSweepInterval);
+
             if (!m_Validated ||
                 Settings.CacheInstance == null ||
                 !Settings.CacheInstance.Ready())
@@ -402,7 +404,6 @@
                 }
             }
 
-            yield return new WaitForSeconds(Settings.CacheSweepInterval);
             yield return CacheRoutineCo();
         }
 
@@ -411,15 +412,22 @@
         /// </summary>
         void OnDestroy()
         {
+            StopAllCoroutines();
+
             if (m_RequestQueue.Count > 0)
             {
-                Debug.LogWarningFormat("[Keen] you have pending events while shutting down! They will be ignored.");
+                Debug.LogWarningFormat("[Keen] you have pending events while shutting down! They will be cahced.");
 
-                foreach (Request queuedRequest in m_RequestQueue)
-                    queuedRequest.Dispose();
+                foreach (Request pending_request in m_RequestQueue)
+                {
+                    if (!pending_request.IsDone)
+                        CacheRequest(pending_request);
+
+                    pending_request.Dispose();
+                }
+
+                m_RequestQueue.Clear();
             }
-
-            StopAllCoroutines();
 
             if (Settings != null && Settings.CacheInstance != null)
                 Settings.CacheInstance.Dispose();
