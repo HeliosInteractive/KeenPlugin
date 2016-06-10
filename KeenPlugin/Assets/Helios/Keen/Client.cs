@@ -349,7 +349,10 @@
         private void CacheRequest(Request request)
         {
             if (request == null)
-                throw new NullReferenceException("[Keen] Request is null.");
+            {
+                Debug.LogError("[Keen] request is null and cannot be cached.");
+                return;
+            }
 
             if (request.Status == EventStatus.None &&
                 Settings.CacheInstance != null &&
@@ -375,7 +378,10 @@
             if (!m_Validated ||
                 Settings.CacheInstance == null ||
                 !Settings.CacheInstance.Ready())
+            {
+                Debug.LogError("[Keen] cache routine is going to die forever. Bye Bye.");
                 yield break;
+            }
 
             if (Settings.CacheInstance.Read(ref m_Cached, Settings.CacheSweepCount) && m_Cached.Count > 0)
             {
