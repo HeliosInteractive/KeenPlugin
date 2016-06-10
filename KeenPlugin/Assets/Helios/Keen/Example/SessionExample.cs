@@ -45,7 +45,7 @@ public class SessionExample : MonoBehaviour
     void OnKeenClientEvent(Helios.Keen.Client.CallbackData metric_event)
     {
         Debug.LogFormat("Keen event with name {0} and value {1} ended with status: {2}",
-            metric_event.name, metric_event.data, metric_event.status.ToString());
+            metric_event.evdata.Name, metric_event.evdata.Data, metric_event.status.ToString());
     }
 
     void Update ()

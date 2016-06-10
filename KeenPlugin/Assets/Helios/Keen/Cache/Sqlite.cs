@@ -63,7 +63,8 @@
             if (m_QueryCommand != null)
             {
                 m_QueryCommand.Connection = m_DatabaseConn;
-                m_QueryCommand.CommandText = "CREATE TABLE IF NOT EXISTS cache(id INTEGER PRIMARY KEY, attempts INTEGER DEFAULT 0, data VARCHAR(4096) UNIQUE);";
+                m_QueryCommand.CommandText = string.Format("CREATE TABLE IF NOT EXISTS cache(attempts INTEGER DEFAULT 0, name VARCHAR({0}), data VARCHAR({1}), UNIQUE(name, data) ON CONFLICT IGNORE);",
+                    Client.EventData.NameCharacterLimit, Client.EventData.DataCharacterLimit);
                 m_QueryCommand.CommandTimeout = 100;
 
                 try { m_QueryCommand.ExecuteNonQuery(); }
@@ -100,13 +101,15 @@
             MaxAttempts = 0;
         }
 
-        public override bool Write(Entry entry)
+        public override bool Write(Client.EventData entry)
         {
             if (!Ready()) return false;
 
             m_QueryCommand.Parameters.Clear();
-            m_QueryCommand.CommandText = "INSERT OR IGNORE INTO cache (data) VALUES (@data); UPDATE cache SET attempts=attempts+1 WHERE data=@data";
-            m_QueryCommand.Parameters.Add(new SqliteParameter { ParameterName = "@data", Value = entry.ToString() });
+            m_QueryCommand.CommandText = "INSERT OR IGNORE INTO cache (name, data) VALUES (@name, @data); UPDATE cache SET attempts=attempts+1 WHERE name=@name AND data=@data";
+            m_QueryCommand.Parameters.Add(new SqliteParameter { ParameterName = "@name", Value = entry.Name });
+            m_QueryCommand.Parameters.Add(new SqliteParameter { ParameterName = "@data", Value = entry.Data });
+            m_QueryCommand.CommandTimeout = 100;
 
             try
             {
@@ -122,13 +125,37 @@
             return true;
         }
 
-        public override bool Remove(Entry entry)
+        public override bool Exists(Client.EventData entry)
         {
             if (!Ready()) return false;
 
             m_QueryCommand.Parameters.Clear();
-            m_QueryCommand.CommandText = "DELETE FROM cache WHERE data=@data";
-            m_QueryCommand.Parameters.Add(new SqliteParameter { ParameterName = "@data", Value = entry.ToString() });
+            m_QueryCommand.CommandText = "SELECT name FROM cache WHERE name=@name AND data=@data";
+            m_QueryCommand.Parameters.Add(new SqliteParameter { ParameterName = "@name", Value = entry.Name });
+            m_QueryCommand.Parameters.Add(new SqliteParameter { ParameterName = "@data", Value = entry.Data });
+            m_QueryCommand.CommandTimeout = 100;
+
+            try
+            {
+                using (IDataReader reader = m_QueryCommand.ExecuteReader())
+                    return reader.Read();
+            }
+            catch (Exception ex)
+            {
+                Debug.LogErrorFormat("[Keen.Cache] remove query failed: {0}", ex.Message);
+                return false;
+            }
+        }
+
+        public override bool Remove(Client.EventData entry)
+        {
+            if (!Ready()) return false;
+
+            m_QueryCommand.Parameters.Clear();
+            m_QueryCommand.CommandText = "DELETE FROM cache WHERE data=@data AND name=@name";
+            m_QueryCommand.Parameters.Add(new SqliteParameter { ParameterName = "@name", Value = entry.Name });
+            m_QueryCommand.Parameters.Add(new SqliteParameter { ParameterName = "@data", Value = entry.Data });
+            m_QueryCommand.CommandTimeout = 100;
 
             try
             {
@@ -149,22 +176,23 @@
             return m_Ready;
         }
 
-        public override bool Read(ref List<Entry> entries, uint count)
+        public override bool Read(ref List<Client.EventData> entries, uint count)
         {
             if (!m_Ready || entries == null) return false;
             entries.Clear();
 
             m_QueryCommand.Parameters.Clear();
+            m_QueryCommand.CommandTimeout = 100;
 
             if (MaxAttempts > 0)
             {
-                m_QueryCommand.CommandText = "SELECT data FROM cache WHERE attempts < @limit ORDER BY RANDOM() LIMIT @count";
+                m_QueryCommand.CommandText = "SELECT name, data FROM cache WHERE attempts < @limit ORDER BY RANDOM() LIMIT @count";
                 m_QueryCommand.Parameters.Add(new SqliteParameter { ParameterName = "@count", Value = count });
                 m_QueryCommand.Parameters.Add(new SqliteParameter { ParameterName = "@limit", Value = MaxAttempts });
             }
             else
             {
-                m_QueryCommand.CommandText = "SELECT data FROM cache ORDER BY RANDOM() LIMIT @count";
+                m_QueryCommand.CommandText = "SELECT name, data FROM cache ORDER BY RANDOM() LIMIT @count";
                 m_QueryCommand.Parameters.Add(new SqliteParameter { ParameterName = "@count", Value = count });
             }
 
@@ -174,9 +202,11 @@
                 {
                     while (reader.Read())
                     {
-                        Entry entry = new Entry();
-                        entry.FromString(reader.GetString(0));
-                        entries.Add(entry);
+                        entries.Add(new Client.EventData
+                        {
+                            Name = reader.GetString(0),
+                            Data = reader.GetString(1)
+                        });
                     }
                 }
             }

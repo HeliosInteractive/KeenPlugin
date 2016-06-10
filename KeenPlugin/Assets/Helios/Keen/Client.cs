@@ -59,8 +59,71 @@
         {
             Submitted,
             Cached,
-            Failed,
-            None
+            Failed
+        }
+
+        /// <summary>
+        /// Represents an event sent to Keen IO
+        /// name is collection name and data is JSON object
+        /// </summary>
+        public class EventData
+        {
+            string m_Name;
+            string m_Data;
+
+            public string Name
+            {
+                get { return m_Name; }
+                set
+                {
+                    if (value.Length > NameCharacterLimit)
+                    {
+                        m_Name = value.Substring(0, (int)NameCharacterLimit);
+                        Debug.LogWarning("[Keen] name will be truncated.");
+                    }
+                    else
+                    {
+                        m_Name = value;
+                        return;
+                    }
+                }
+            }
+
+            public string Data
+            {
+                get { return m_Data; }
+                set
+                {
+                    if (value.Length > DataCharacterLimit)
+                    {
+                        m_Data = value.Substring(0, (int)DataCharacterLimit);
+                        Debug.LogWarning("[Keen] data will be truncated.");
+                    }
+                    else
+                    {
+                        m_Data = value;
+                        return;
+                    }
+                }
+            }
+            
+            public WWW AsWWW(Config config)
+            {
+                if (config == null)
+                    throw new ArgumentNullException("Config must be supplied.");
+
+                var headers = new Dictionary<string, string>();
+                headers.Add("Authorization", config.WriteKey);
+                headers.Add("Content-Type", "application/json");
+
+                WWW www = new WWW(string.Format("https://api.keen.io/3.0/projects/{0}/events/{1}"
+                    , config.ProjectId, Name), System.Text.Encoding.ASCII.GetBytes(Data), headers);
+
+                return www;
+            }
+
+            public static uint NameCharacterLimit { get { return 1028; } }
+            public static uint DataCharacterLimit { get { return 4096; } }
         }
 
         /// <summary>
@@ -69,74 +132,14 @@
         /// </summary>
         public class CallbackData
         {
-            public EventStatus  status;
-            public string       name;
-            public string       data;
+            public EventStatus  status          = EventStatus.Failed;
+            public EventData    evdata          = null;
         }
 
-        private bool                        m_Validated = false;
-        private bool                        m_Caching = false;
-        private Config                      m_Settings = null;
-        private List<ICacheProvider.Entry>  m_Cached = new List<ICacheProvider.Entry>();
-        private List<Request>               m_RequestQueue = new List<Request>();
-
-        /// <summary>
-        /// Encapsulates data of a Keen IO event
-        /// network request through this library
-        /// </summary>
-        private class Request : IDisposable
-        {
-            private WWW                     m_RequestData;
-            private string                  m_EventName;
-            private string                  m_EventData;
-            private Action<CallbackData>    m_Callback;
-            private EventStatus             m_Status;
-
-            public WWW                      RequestData { get { return m_RequestData; } }
-            public string                   EventName { get { return m_EventName; } }
-            public string                   EventData { get { return m_EventData; } }
-            public bool                     Disposed { get { return m_Disposed; } }
-            public Action<CallbackData>     Callback { get { return m_Callback; } }
-            public EventStatus              Status { get { return m_Status; } }
-
-            public Request(
-                WWW request_data,
-                string event_name,
-                string event_data,
-                Action<CallbackData> callback,
-                EventStatus status)
-            {
-                m_RequestData = request_data;
-                m_EventName = event_name;
-                m_EventData = event_data;
-                m_Callback = callback;
-                m_Status = status;
-            }
-
-            #region IDisposable Support
-            private bool m_Disposed = false;
-
-            protected virtual void Dispose(bool disposing)
-            {
-                if (!m_Disposed)
-                {
-                    if (disposing)
-                    {
-                        if (m_RequestData != null)
-                            m_RequestData.Dispose();
-                    }
-
-                    m_RequestData = null;
-                    m_Disposed = true;
-                }
-            }
-
-            public void Dispose()
-            {
-                Dispose(true);
-            }
-            #endregion
-        }
+        private bool            m_Validated     = false;
+        private bool            m_Caching       = false;
+        private Config          m_Settings      = null;
+        private List<EventData> m_PendingTasks  = new List<EventData>();
 
         /// <summary>
         /// Instance settings. Use this to provide your Keen project settings.
@@ -186,6 +189,32 @@
                 StartCoroutine(CacheRoutineCo());
 
             m_Caching = true;
+        }
+
+        /// <summary>
+        /// Convenience method for SendEvent(string, string)
+        /// </summary>
+        public void SendEvent<T>(string event_name, T event_data)
+        {
+            SendEvent(event_name, Serialize(event_data));
+        }
+
+        /// <summary>
+        /// Sends JSON string to Keen IO
+        /// </summary>
+        public virtual void SendEvent(string event_name, string event_data)
+        {
+            if (!m_Validated)
+                Debug.LogError("[Keen] Client is not validated.");
+            else if (string.IsNullOrEmpty(event_name))
+                Debug.LogError("[Keen] event name is empty.");
+            else if (string.IsNullOrEmpty(event_data))
+                Debug.LogError("[Keen] event data is empty.");
+            else // run if all above tests passed
+                StartCoroutine(ProcessEventData(new EventData { Name = event_name, Data = event_data }, Settings.EventCallback));
+
+            if (!m_Caching)
+                StartCaching();
         }
 
         /// <summary>
@@ -258,120 +287,91 @@
         }
 
         /// <summary>
-        /// Convenience method for SendEvent(string, string)
-        /// </summary>
-        public void SendEvent<T>(string event_name, T event_data)
-        {
-            SendEvent(event_name, Serialize(event_data));
-        }
-
-        /// <summary>
-        /// Sends JSON string to Keen IO
-        /// </summary>
-        public virtual void SendEvent(string event_name, string event_data)
-        {
-            if (!m_Validated)
-                Debug.LogError("[Keen] Client is not validated.");
-            else if (string.IsNullOrEmpty(event_name))
-                Debug.LogError("[Keen] event name is empty.");
-            else if (string.IsNullOrEmpty(event_data))
-                Debug.LogError("[Keen] event data is empty.");
-            else // run if all above tests passed
-                StartCoroutine(SendEventCo(event_name, event_data, Settings.EventCallback));
-
-            if (!m_Caching)
-                StartCaching();
-        }
-
-        /// <summary>
         /// Coroutine that concurrently attempts to send events to Keen.
+        /// It cached event data on failure.
         /// </summary>
-        IEnumerator SendEventCo(string event_name, string event_data, Action<CallbackData> callback, EventStatus status = EventStatus.None)
+        private IEnumerator ProcessEventData(EventData event_data, Action<CallbackData> callback)
         {
             if (!m_Validated)
                 yield break;
 
-            var headers = new Dictionary<string, string>();
-            headers.Add("Authorization", Settings.WriteKey);
-            headers.Add("Content-Type", "application/json");
-
-            WWW keen_server = new WWW(string.Format("https://api.keen.io/3.0/projects/{0}/events/{1}"
-                , Settings.ProjectId, event_name),
-                System.Text.Encoding.ASCII.GetBytes(event_data), headers);
-
-            using (Request request = new Request(keen_server, event_name, event_data, callback, status))
+            using (WWW task_www = event_data.AsWWW(Settings))
             {
-                m_RequestQueue.Add(request);
+                m_PendingTasks.Add(event_data);
 
-                yield return keen_server;
+                yield return task_www;
 
-                m_RequestQueue.Remove(request);
+                m_PendingTasks.Remove(event_data);
 
-                if (!CheckRequest(request))
-                    CacheRequest(request);
+                EventStatus event_status = EventStatus.Failed;
+
+                if (!string.IsNullOrEmpty(task_www.error))
+                {
+                    Debug.LogErrorFormat("[Keen] error: {0}", task_www.error);
+
+                    if (CacheEventData(event_data))
+                    {
+                        Debug.LogFormat("[Keen] event cached: {0}", event_data.Name);
+                        event_status = EventStatus.Cached;
+                    }
+                    else
+                    {
+                        Debug.LogFormat("[Keen] event failed: {0}", event_data.Name);
+                        event_status = EventStatus.Failed;
+                    }
+                }
+                else
+                {
+                    Debug.LogFormat("[Keen] event submitted: {0}", event_data.Name);
+                    event_status = EventStatus.Submitted;
+
+                    if (Settings.CacheInstance != null &&
+                        Settings.CacheInstance.Ready())
+                    {
+                        if (Settings.CacheInstance.Exists(event_data))
+                            Settings.CacheInstance.Remove(event_data);
+                    }
+                }
+
+                if (callback != null)
+                {
+                    callback.Invoke(new CallbackData
+                    {
+                        evdata = event_data,
+                        status = event_status
+                    });
+                }
             }
         }
 
         /// <summary>
-        /// Checks if a completed (isDone == true) request succeeded.
+        /// Cached EventData for later use
         /// </summary>
-        /// <param name="request">A Request object</param>
-        /// <returns>True on a successful request; otherwise, false.</returns>
-        private bool CheckRequest(Request request)
+        /// <param name="event_data">event to be cached</param>
+        /// <returns>answers true on successful cache</returns>
+        private bool CacheEventData(EventData event_data)
         {
-            if (request == null ||
-                request.RequestData == null ||
-                !request.RequestData.isDone)
-            {
-                throw new ArgumentException("[Keen] Request is dirty.");
-            }
+            bool success = false;
 
-            if (!string.IsNullOrEmpty(request.RequestData.error))
+            if (!m_Validated ||
+                event_data == null)
             {
-                Debug.LogErrorFormat("[Keen] error: {0}", request.RequestData.error);
-                return false;
+                Debug.LogError("[Keen] data is null and cannot be cached.");
             }
             else
+            if (Settings.CacheInstance != null &&
+                Settings.CacheInstance.Ready())
             {
-                Debug.LogFormat("[Keen] sent successfully: {0}", request.EventName);
-                if (request.Callback != null)
-                    request.Callback.Invoke(new CallbackData
-                    { status = EventStatus.Submitted, data = request.EventData, name = request.EventName });
+                success = Settings.CacheInstance.Write(event_data);
             }
 
-            return true;
-        }
-
-        /// <summary>
-        /// Checks if the queued request failed and if so, caches it.
-        /// </summary>
-        /// <param name="request">A Request object</param>
-        private void CacheRequest(Request request)
-        {
-            if (request == null)
-            {
-                Debug.LogError("[Keen] request is null and cannot be cached.");
-                return;
-            }
-
-            if (request.Status == EventStatus.None &&
-                Settings.CacheInstance != null &&
-                Settings.CacheInstance.Ready() &&
-                Settings.CacheInstance.Write(new ICacheProvider.Entry { name = request.EventName, data = request.EventData }))
-            {
-                if (request.Callback != null)
-                    request.Callback.Invoke(new CallbackData
-                    { status = EventStatus.Cached, data = request.EventData, name = request.EventName });
-            }
-            else if (request.Callback != null)
-                request.Callback.Invoke(new CallbackData
-                { status = EventStatus.Failed, data = request.EventData, name = request.EventName });
+            return success;
         }
 
         /// <summary>
         /// Coroutine that takes care of cached events progressively
         /// </summary>
-        IEnumerator CacheRoutineCo()
+        private IEnumerator CacheRoutineCo()
         {
             yield return new WaitForSeconds(Settings.CacheSweepInterval);
 
@@ -383,25 +383,11 @@
                 yield break;
             }
 
-            if (Settings.CacheInstance.Read(ref m_Cached, Settings.CacheSweepCount) && m_Cached.Count > 0)
+            List<EventData> cached_events = new List<EventData>();
+            if (Settings.CacheInstance.Read(ref cached_events, Settings.CacheSweepCount) && cached_events.Count > 0)
             {
-                foreach (ICacheProvider.Entry entry in m_Cached)
-                {
-                    yield return SendEventCo(entry.name, entry.data, (result) =>
-                    {
-                        if (result.status == EventStatus.Submitted)
-                        {
-                            Debug.Log("[Keen] Cached event sent successfully and will be removed.");
-                            Settings.CacheInstance.Remove(entry);
-                        }
-                        else
-                        {
-                            Debug.LogWarningFormat("[Keen] Cached event failed to be sent.");
-                            Settings.CacheInstance.Write(entry);
-                        }
-                    },
-                    EventStatus.Cached);
-                }
+                foreach (EventData entry in cached_events)
+                    yield return ProcessEventData(entry, null);
             }
 
             yield return CacheRoutineCo();
@@ -410,21 +396,18 @@
         /// <summary>
         /// Make sure everything is stopped when object is gone.
         /// </summary>
-        void OnDestroy()
+        private void OnDestroy()
         {
             StopAllCoroutines();
 
-            if (m_RequestQueue.Count > 0)
+            if (m_PendingTasks.Count > 0)
             {
-                Debug.LogWarningFormat("[Keen] you have pending events while shutting down! They will be cahced.");
+                Debug.LogWarningFormat("[Keen] you have pending events while shutting down! They will be cached.");
 
-                foreach (Request pending_request in m_RequestQueue)
-                {
-                    CacheRequest(pending_request);
-                    pending_request.Dispose();
-                }
+                foreach (EventData pending_task in m_PendingTasks)
+                    CacheEventData(pending_task);
 
-                m_RequestQueue.Clear();
+                m_PendingTasks.Clear();
             }
 
             if (Settings != null && Settings.CacheInstance != null)
@@ -439,68 +422,26 @@
         public abstract class ICacheProvider : IDisposable
         {
             /// <summary>
-            /// Represents a cache entry
-            /// </summary>
-            public class Entry
-            {
-                public string name;
-                public string data;
-
-                private const string GLUE = "@@@";
-                private const uint CHRLIM = 4096;
-
-                /// <summary>
-                /// Serializes Entry to string. Uses a GLUE string (above)
-                /// NOTE: if you happen to have the GLUE string in your data
-                /// it will be removed!
-                /// NOTE: max (data+glue+name) length is CHRLIM (above)
-                /// </summary>
-                /// <returns>serialized Entry</returns>
-                public override string ToString()
-                {
-                    if (data.Contains(GLUE))
-                        Debug.LogWarningFormat("[Keen] your data contains the GLUE string: {0}!", GLUE);
-
-                    string result = string.Format("{0}{1}{2}", name, GLUE, data.Replace(GLUE, string.Empty));
-
-                    if (result.Length > CHRLIM)
-                        Debug.LogWarningFormat("[Keen] your data will be truncated! limit is: {0}", CHRLIM);
-
-                    return result;
-                }
-
-                /// <summary>
-                /// De serializes Entry from a string
-                /// </summary>
-                /// <param name="input">serialized Entry</param>
-                public void FromString(string input)
-                {
-                    name = string.Empty;
-                    data = string.Empty;
-
-                    var splitted = input.Split(new string[] { GLUE }, StringSplitOptions.RemoveEmptyEntries);
-
-                    if (splitted.Length > 0) name = splitted[0];
-                    if (splitted.Length > 1) data = splitted[1];
-                }
-            }
-
-            /// <summary>
             /// Reads "count" number of cache entries and fills
             /// the passed in List. Returns success of operation.
             /// </summary>
-            public abstract bool Read(ref List<Entry> entries, uint count);
+            public abstract bool Read(ref List<EventData> entries, uint count);
 
             /// <summary>
             /// Writes an "Entry" to cache.
             /// NOTE: MUST handle double-entries properly!
             /// </summary>
-            public abstract bool Write(Entry entry);
+            public abstract bool Write(EventData entry);
 
             /// <summary>
             /// Removes an entry with ID "id" from cache storage.
             /// </summary>
-            public abstract bool Remove(Entry entry);
+            public abstract bool Remove(EventData entry);
+
+            /// <summary>
+            /// Removes an entry with ID "id" from cache storage.
+            /// </summary>
+            public abstract bool Exists(EventData entry);
 
             /// <summary>
             /// Answers true if instance is ready to cache.
