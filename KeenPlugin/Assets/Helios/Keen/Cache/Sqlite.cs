@@ -63,9 +63,8 @@
             if (m_QueryCommand != null)
             {
                 m_QueryCommand.Connection = m_DatabaseConn;
-                m_QueryCommand.CommandText = "CREATE TABLE IF NOT EXISTS cache(attempts INTEGER DEFAULT 0, name VARCHAR(@nameLimit), data VARCHAR(@dataLimit), UNIQUE(name, data) ON CONFLICT IGNORE);";
-                m_QueryCommand.Parameters.Add(new SqliteParameter { ParameterName = "@nameLimit", Value = Client.EventData.NameCharacterLimit });
-                m_QueryCommand.Parameters.Add(new SqliteParameter { ParameterName = "@dataLimit", Value = Client.EventData.DataCharacterLimit });
+                m_QueryCommand.CommandText = string.Format("CREATE TABLE IF NOT EXISTS cache(attempts INTEGER DEFAULT 0, name VARCHAR({0}), data VARCHAR({1}), UNIQUE(name, data) ON CONFLICT IGNORE);",
+                    Client.EventData.NameCharacterLimit, Client.EventData.DataCharacterLimit);
                 m_QueryCommand.CommandTimeout = 100;
 
                 try { m_QueryCommand.ExecuteNonQuery(); }
