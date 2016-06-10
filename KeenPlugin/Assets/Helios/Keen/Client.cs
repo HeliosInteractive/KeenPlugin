@@ -324,6 +324,13 @@
                 {
                     Debug.LogFormat("[Keen] event submitted: {0}", event_data.Name);
                     event_status = EventStatus.Submitted;
+
+                    if (Settings.CacheInstance != null &&
+                        Settings.CacheInstance.Ready())
+                    {
+                        if (Settings.CacheInstance.Exists(event_data))
+                            Settings.CacheInstance.Remove(event_data);
+                    }
                 }
 
                 if (callback != null)
