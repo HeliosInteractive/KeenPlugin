@@ -10,6 +10,17 @@ Remember to change your runtime configuration from **.NET subset to .NET** in bu
 
 Binaries for SQLite on Windows are checked in (x86 and x86_64). You may obtain additional binaries for other platforms from [SQLite project's website](http://www.sqlite.org/) if you need to.
 
+## Tested Platforms
+
+Virtually you can use this library on all platforms as long as you take care of providing a native build of `sqlite3`. A binary is checked in for followin **tested** platforms:
+
+  - Windows x86
+  - Windows x64
+  - OSX x64
+  - iOS x64
+
+On iOS, you must use `Application.persistentDataPath` as your cache directory (this is one of the fewest directories write-able on iOS devices).
+
 ## Sample usage
 
 You may begin by importing the latest stable release `.unitypackage`. There is an example scene and an example script (`MetricsExample.cs`) in this repository which shows you how to use this plugin.
