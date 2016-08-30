@@ -38,7 +38,7 @@ public class SessionExample : MonoBehaviour
             /* [OPTIONAL] This is the callback per Client's event emission */
             EventCallback       = OnKeenClientEvent,
             /* [OPTIONAL] A cache implementation instance. If not provided, cache is turned off */
-            CacheInstance       = new Helios.Keen.Cache.Sqlite(Path.Combine(Application.streamingAssetsPath, "keen.sqlite3"))
+            CacheInstance       = new Helios.Keen.Cache.Sqlite(Path.Combine(Application.persistentDataPath, "keen.sqlite3"))
         };
     }
 
